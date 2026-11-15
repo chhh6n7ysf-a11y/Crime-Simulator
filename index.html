@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>犯罪模拟器 · 3D试玩版</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080d16;color:#fff;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;touch-action:none}
+#game{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;top:9px;left:9px;right:9px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.card{background:#09111dcc;border:1px solid #71809666;border-radius:11px;padding:8px 11px;text-shadow:0 1px 3px #000;backdrop-filter:blur(7px);font-size:13px}
+#objective{position:absolute;top:76px;left:9px;max-width:250px;font-size:12px}
+#inventory{position:absolute;top:76px;right:9px;width:158px;font-size:11px}
+.slot{background:#172330d9;border:1px solid #64748b66;border-radius:6px;padding:5px;margin-top:4px}
+#prompt{position:absolute;bottom:148px;left:50%;transform:translateX(-50%);background:#07101ddd;border:1px solid #9aa9b8;border-radius:9px;padding:8px 12px;font-size:13px;white-space:nowrap;display:none}
+#message{position:absolute;top:43%;left:50%;transform:translate(-50%,-50%);background:#08111eeF;border:1px solid #9baabd;border-radius:10px;padding:12px 16px;display:none;text-align:center;max-width:85%;font-size:14px}
+#controls{position:absolute;bottom:12px;left:12px;right:12px;display:flex;align-items:end;justify-content:space-between;pointer-events:none}
+#stick{width:122px;height:122px;border-radius:50%;background:#dce8f022;border:2px solid #dce8f077;position:relative;pointer-events:auto}
+#nub{position:absolute;width:46px;height:46px;border-radius:50%;background:#dce8f099;left:36px;top:36px}
+.actions{display:grid;grid-template-columns:repeat(2,65px);gap:7px;pointer-events:auto}
+button{color:#fff;background:#203347eF;border:1px solid #8da0b3;border-radius:9px;padding:9px 6px;font-weight:700;font-size:12px}
+button:active{background:#486987}button:disabled{opacity:.35}
+#menu{position:absolute;inset:0;background:#050a12d9;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
+.inner{width:min(520px,100%);max-height:95%;overflow:auto;background:#111c29f2;border:1px solid #718096;border-radius:15px;padding:18px}
+h1{margin:0 0 4px;font-size:26px}h2{font-size:18px;margin:8px 0}.muted{color:#b8c5d2;font-size:12px;line-height:1.6}
+.row{display:flex;gap:8px;margin:10px 0}.row button{flex:1}
+.hidden{display:none!important}
+@media(min-width:800px){#controls{width:650px;left:50%;right:auto;transform:translateX(-50%)}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+ <div class="card"><b id="place">家与卡车</b><div id="clock" class="muted">第1天 20:00</div></div>
+ <div class="card" style="text-align:right"><b id="money">$0</b><div id="quota" class="muted">今日配额 $300</div></div>
+</div>
+<div id="objective" class="card">目标：走到卡车旁边，查看地图。</div>
+<div id="inventory" class="card"><b>物品栏</b><div id="slots"></div></div>
+<div id="prompt"></div><div id="message"></div>
+<div id="controls">
+ <div id="stick"><div id="nub"></div></div>
+ <div class="actions"><button id="interact">互动</button><button id="run">跑步</button><button id="hit">木棍</button><button id="bag">背包</button></div>
+</div>
+<div id="menu"><div class="inner">
+<h1>犯罪模拟器</h1><div class="muted">CRIME SIMULATOR · 3D 夜间潜行试玩版</div>
+<p>你是一个负债累累的普通人。夜晚潜入住宅寻找贵重物品，把东西带回卡车，努力完成每日配额。</p>
+<div class="row"><button id="start">开始游戏</button><button id="help">操作说明</button></div>
+<div id="helptext" class="muted hidden">手机：左侧摇杆移动，右侧按钮互动/跑步/木棍；手指在画面右侧拖动可转动视角。电脑：WASD移动、鼠标拖动视角、E互动、Shift跑步、空格挥棍。靠近卡车打开地图；在外出地图中回到卡车即可存放赃物。</div>
+<p class="muted">本版本采用真正的3D模型、程序生成材质和动态人物骨骼式肢体动画。建议横屏游玩。</p>
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(()=>{
+if(!window.THREE){document.getElementById('message').textContent='3D引擎加载失败，请检查网络后刷新页面。';document.getElementById('message').style.display='block';return;}
+const THREE=window.THREE,root=document.getElementById('game');
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;root.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x07101d);scene.fog=new THREE.Fog(0x07101d,18,65);
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.08,100);camera.rotation.order='YXZ';
+const viewArm=new THREE.Group();camera.add(viewArm);viewArm.position.set(.48,-.48,-.78);const sleeve=new THREE.Mesh(new THREE.BoxGeometry(.22,.48,.24),shirt);sleeve.position.set(0,-.12,0);viewArm.add(sleeve);const hand=new THREE.Mesh(new THREE.SphereGeometry(.105,12,10),skin);hand.position.set(0,.13,-.04);viewArm.add(hand);const heldTool=new THREE.Mesh(new THREE.BoxGeometry(.055,.52,.055),wood);heldTool.position.set(.06,.36,-.1);heldTool.rotation.z=-.28;viewArm.add(heldTool);
+scene.add(new THREE.HemisphereLight(0x8ea5d1,0x29251c,1.25));
+const moon=new THREE.DirectionalLight(0x9db6e8,1.15);moon.position.set(-12,22,8);moon.castShadow=true;moon.shadow.mapSize.set(1024,1024);scene.add(moon);
+const mats={};
+function texture(kind,base,detail){
+ const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');x.fillStyle=base;x.fillRect(0,0,256,256);
+ if(kind==='brick'){for(let y=0;y<256;y+=32){let off=(y/32%2)*32;for(let a=-32;a<288;a+=64){x.fillStyle=detail;x.fillRect(a+off,y,61,28);x.fillStyle='#ffffff18';x.fillRect(a+off,y,61,2);}}}
+ if(kind==='wood'){for(let a=0;a<256;a+=24){x.fillStyle=detail;x.fillRect(a,0,20,256);x.fillStyle='#00000022';x.fillRect(a+20,0,3,256);for(let y=15;y<256;y+=61){x.fillStyle='#ffffff18';x.fillRect(a+3,y,12,2);}}}
+ if(kind==='concrete'){for(let i=0;i<900;i++){x.fillStyle=Math.random()>.5?'#ffffff12':'#00000012';x.fillRect(Math.random()*256,Math.random()*256,2+Math.random()*5,2+Math.random()*4);}}
+ if(kind==='grass'){for(let i=0;i<1800;i++){x.fillStyle=Math.random()>.5?'#91a85a55':'#071b0b66';x.fillRect(Math.random()*256,Math.random()*256,1,3+Math.random()*7);}}
+ if(kind==='asphalt'){for(let i=0;i<1000;i++){x.fillStyle='#ffffff'+(Math.random()>.5?'12':'08');x.fillRect(Math.random()*256,Math.random()*256,1+Math.random()*2,1+Math.random()*2);}}
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;
+}
+function mat(name,color,kind,detail,rough=.9){if(!mats[name])mats[name]=new THREE.MeshStandardMaterial({color,map:kind?texture(kind,color,detail):null,roughness:rough});return mats[name];}
+const concrete=mat('concrete','#b8a58d','concrete'),brick=mat('brick','#9a745a','brick','#6e4b3b'),wood=mat('wood','#8c5733','wood','#56351f'),roof=mat('roof','#343b48'),glass=mat('glass','#182f46',null,null,.18),grass=mat('grass','#405333','grass'),road=mat('road','#252a31','asphalt'),metal=mat('metal','#3c4855'),white=mat('white','#ded6c5'),dark=mat('dark','#171b22'),skin=mat('skin','#c28b68'),shirt=mat('shirt','#496a8a'),pants=mat('pants','#252e3c');
+const geo={box:new THREE.BoxGeometry(1,1,1),sphere:new THREE.SphereGeometry(.5,12,10),cyl:new THREE.CylinderGeometry(.5,.5,1,12)};
+function box(parent,x,y,z,sx,sy,sz,m,shadow=true){let o=new THREE.Mesh(geo.box,m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.castShadow=shadow;o.receiveShadow=true;parent.add(o);return o;}
+function sphere(parent,x,y,z,s,m){let o=new THREE.Mesh(geo.sphere,m);o.position.set(x,y,z);o.scale.set(s,s,s);o.castShadow=true;parent.add(o);return o;}
+let world=new THREE.Group();scene.add(world);let interactables=[],npcs=[],player={x:0,y:0,z:0,yaw:0,pitch:0},sceneName='home';
+let day=1,minutes=20*60,money=0,quota=300,townHours=0,cityPass=false,desertPass=false,desertUsed=false,actionElapsed=0,active=false;
+let loot=[],stash=[],messageTime=0,runHeld=false,stick={x:0,y:0},keys={},lookTouch=null;
+const values={'旧电视':40,'旧相机':85,'游戏主机':160,'金项链':240,'名表':380,'现金信封':120,'名贵雕塑':500,'古董箱':650,'宝石袋':450};
+function addInteract(x,z,name,type,data={}){interactables.push({x,z,name,type,...data});}
+function addTree(x,z){let g=new THREE.Group();g.position.set(x,0,z);world.add(g);box(g,0,1.1,0,.35,2.2,.35,wood);sphere(g,0,2.7,0,1.15,mat('leaves','#203d2b'));sphere(g,-.55,2.45,.15,.75,mat('leaves2','#294b31'));sphere(g,.55,2.5,-.1,.8,mat('leaves3','#355536'));}
+function addLamp(x,z){box(world,x,2.1,z,.12,4.2,.12,metal);box(world,x+.35,4.05,z,.8,.09,.12,metal);let l=new THREE.PointLight(0xffd79a,35,12,2);l.position.set(x+.5,3.9,z);world.add(l);let bulb=sphere(world,x+.5,3.9,z,.13,mat('bulb','#fff0bd',null,null,.3));}
+function addHouse(x,z,w=5,d=4,floors=1,style='brick',rich=false){
+ let g=new THREE.Group();g.position.set(x,0,z);world.add(g);let wall=style==='wood'?wood:style==='brick'?brick:concrete;
+ box(g,0,floors*1.65/2,0,w,floors*1.65,d,wall);
+ // roof and eaves
+ box(g,0,floors*1.65+.12,0,w+.35,.22,d+.35,roof);
+ let roofTop=box(g,0,floors*1.65+.45,0,w*.55,.55,d+.55,roof);roofTop.rotation.z=.0;
+ // facade door, windows per floor
+ box(g,0,.78,d/2+.015,.86,1.55,.08,wood);
+ box(g,.22,.85,d/2+.07,.08,.12,.04,metal);
+ for(let f=0;f<floors;f++)for(let side of [-1,1]){
+  let wx=side*w*.28,wy=f*1.65+.95;
+  box(g,wx,wy,d/2+.03,.95,.85,.08,glass);
+  box(g,wx,wy-.48,d/2+.09,1.08,.08,.12,white);
+  box(g,wx-.52,wy,d/2+.09,.07,.95,.12,white);
+  box(g,wx+.52,wy,d/2+.09,.07,.95,.12,white);
+  box(g,wx,wy,d/2+.1,.05,.82,.12,white);
+ }
+ if(rich){for(let i=0;i<4;i++){box(g,-w/2-.4,.55,-d/2+i*d/3,.12,1.1,.12,white);box(g,-w/2-.4,.95,-d/2+i*d/3,.12,.12,.12,white);}box(g,-w/2-.4,.55,0,.12,1.1,d,white);}
+ // foundation steps
+ box(g,0,.12,d/2+.35,1.5,.24,.8,concrete);
+ addInteract(x,z+d/2+1.1,'住宅门','door',{locked:true,house:g});
+ addInteract(x+w*.34,z+d/2+.2,'住宅窗户','glass',{cut:false});
+}
+function makeTruck(x,z){let g=new THREE.Group();g.position.set(x,0,z);world.add(g);
+ box(g,0,.75,0,3.8,1.35,6,mat('truck','#344b5c'));box(g,0,1.65,1.85,3.65,1.45,2.2,mat('truckcab','#536c7d'));box(g,0,1.7,3,.0+3.2,1,.06,glass);
+ for(let a of [-1.35,1.35])for(let b of [-1.8,1.8]){let w=new THREE.Mesh(new THREE.CylinderGeometry(.48,.48,.25,16),dark);w.rotation.z=Math.PI/2;w.position.set(a,.48,b);g.add(w);}
+ box(g,0,1.45,-1.25,3.55,.08,5.1,wood);
+ addInteract(x,z,'大卡车','truck');
+}
+function makeNPC(x,z,guard=false){
+ let g=new THREE.Group();g.position.set(x,0,z);world.add(g);
+ let body=new THREE.Group();g.add(body);
+ box(body,0,1.15,0,.58,.78,.32,guard?mat('guard','#263b55'):shirt);
+ sphere(body,0,1.78,0,.25,skin);
+ let armL=new THREE.Group();armL.position.set(-.38,1.42,0);body.add(armL);box(armL,0,-.28,0,.17,.62,.18,skin);
+ let armR=new THREE.Group();armR.position.set(.38,1.42,0);body.add(armR);box(armR,0,-.28,0,.17,.62,.18,skin);
+ let legL=new THREE.Group();legL.position.set(-.17,.78,0);body.add(legL);box(legL,0,-.38,0,.22,.76,.24,pants);
+ let legR=new THREE.Group();legR.position.set(.17,.78,0);body.add(legR);box(legR,0,-.38,0,.22,.76,.24,pants);
+ if(guard){let cap=box(body,0,2.04,0,.42,.12,.42,metal);box(body,0,1.94,.15,.5,.06,.18,metal);}
+ npcs.push({g,body,armL,armR,legL,legR,x,z,guard,down:0,sleep:false,phase:Math.random()*6,homeX:x,homeZ:z});
+}
+function clearWorld(){while(world.children.length)world.remove(world.children[0]);interactables=[];npcs=[];}
+function ground(){box(world,0,-.18,0,60,.3,60,grass);box(world,0,-.015,0,9,.08,60,road);for(let z=-28;z<30;z+=5)box(world,0,.04,z,.16,.03,2.3,white,false);}
+function buildScene(which){
+ clearWorld();sceneName=which;ground();
+ if(which==='home'){
+  player.x=-5;player.z=5;player.yaw=0;
+  // modest home interior
+  box(world,-5,1,5,12,2,10,concrete);box(world,-5,2.1,5,12,.2,10,roof);
+  box(world,-5,1,-.02,12,2,.2,white);box(world,-11,1,5,.2,2,10,white);box(world,1,1,5,.2,2,10,white);
+  box(world,-5,.15,5,11.8,.2,9.8,mat('floor','#594d42'));
+  box(world,-7,.55,6,2,.8,1,wood);box(world,-3,.55,2,1.2,1.1,.8,dark);
+  makeTruck(7,7);addLamp(0,-4);addLamp(10,-4);
+  addTree(-13,-8);addTree(14,-10);
+  addInteract(-7,6,'旧电视','loot',{value:40});
+ }else{
+  player.x=-5;player.z=-22;player.yaw=0;
+  // street blocks and houses
+  for(let z=-15;z<=18;z+=11){addHouse(-8,z,5,5,1+(Math.abs(z)%2),z%2?'wood':'brick',z===7);addHouse(8,z,5.5,5, z===7?3:1,z%2?'concrete':'brick',z===7);}
+  for(let z=-25;z<26;z+=9){addLamp(-2,z);addLamp(2,z);addTree(-14,z+3);addTree(14,z-2);}
+  makeTruck(0,23);
+  if(which==='town'){
+   makeNPC(-9,-12);makeNPC(7,-11);makeNPC(-8,0);makeNPC(8,1);makeNPC(8,12,true);makeNPC(-7,13);
+   addInteract(-8,8,'金项链','loot',{value:240});addInteract(8,8,'名表','loot',{value:380});addInteract(-8,-2,'游戏主机','loot',{value:160});addInteract(8,-2,'旧相机','loot',{value:85});addInteract(10,18,'现金信封','loot',{value:120});
+  }else if(which==='city'){
+   addHouse(-8,0,7,6,3,'concrete',true);makeNPC(-8,-7,true);makeNPC(8,5,true);
+   addInteract(-8,4,'局长办公室文件柜','loot',{key:true});addInteract(8,-4,'名贵雕塑','loot',{value:500});
+  }else{
+   // desert dunes
+   for(let i=0;i<20;i++){let dune=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),mat('sand','#b99a61'));dune.position.set((Math.random()-.5)*48,.2,(Math.random()-.5)*48);dune.scale.set(5,.7,3);world.add(dune);}
+   addInteract(8,0,'古董箱','loot',{value:650});addInteract(-8,9,'宝石袋','loot',{value:450});
+  }
+ }
+ // world lighting
+ let ambient=new THREE.PointLight(0x7d9bd1,10,55);ambient.position.set(0,12,0);world.add(ambient);
+ updateHud();
+}
+function nearest(){let best=null,dist=2.7;for(const o of interactables){let d=Math.hypot(player.x-o.x,player.z-o.z);if(d<dist){dist=d;best=o;}}return best;}
+function msg(t){let el=document.getElementById('message');el.textContent=t;el.style.display='block';messageTime=2.5;}
+function updateHud(){document.getElementById('place').textContent=({home:'家与卡车',town:'城镇',city:'市中心',desert:'沙漠'})[sceneName];let h=Math.floor(minutes/60)%24,m=minutes%60;document.getElementById('clock').textContent=`第${day}天 ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;document.getElementById('money').textContent='$'+money;document.getElementById('quota').textContent='今日配额 $'+quota;document.getElementById('objective').textContent=money>=quota?'今日配额已完成！可继续行动或回家。':`今日还需 $${Math.max(0,quota-money)}。把物品带回卡车才能安全存放。`;document.getElementById('slots').innerHTML=['撬锁器','玻璃切割器','木棍',loot[0]||'空',loot[1]||'空',loot[2]||'空'].map((x,i)=>`<div class="slot">${i<3?'工具':'物品格'} ${i+1}：${x}</div>`).join('');}
+function mapMenu(){let m=document.getElementById('menu');m.style.display='flex';m.querySelector('.inner').innerHTML=`<h1>卡车地图</h1><p class="muted">选择行动地点。返回卡车可将赃物放入车厢。</p><div class="row"><button data-go="town">城镇（开放）</button><button data-go="city" ${townHours>=10?'':'disabled'}>市中心（城镇行动累计10小时解锁）</button></div><div class="row"><button data-go="desert" ${cityPass&&!desertUsed?'':'disabled'}>沙漠（一次性通行证）</button><button id="sell">出售车厢赃物</button></div><p class="muted">车厢：${stash.join('、')||'空'}<br>随身：${loot.join('、')||'空'}</p><button id="close">返回</button>`;
+ m.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{let s=b.dataset.go;if(s==='desert'){desertUsed=true;cityPass=false;}m.style.display='none';buildScene(s);minutes=21*60;actionElapsed=0;active=true;msg('行动开始！必须在早上09:00前回到卡车。');});
+ document.getElementById('sell').onclick=()=>{let total=stash.reduce((a,n)=>a+(values[n]||100),0);money+=total;stash=[];msg('出售成功，获得 $'+total);updateHud();mapMenu();};
+ document.getElementById('close').onclick=()=>m.style.display='none';
+}
+function interact(){let o=nearest();if(!o){msg('附近没有可互动的目标。');return;}
+ if(o.type==='truck'){if(sceneName==='home'){mapMenu();return;}stash.push(...loot);loot=[];active=false;buildScene('home');msg('已返回卡车，赃物安全存放。');updateHud();return;}
+ if(o.type==='door'){msg('门锁已撬开，发出声响！附近居民可能听见。');o.used=true;return;}
+ if(o.type==='glass'){msg('玻璃已被切开，没有发出声音。');o.used=true;return;}
+ if(o.type==='loot'){if(o.key){cityPass=true;msg('拿到了沙漠一次性通行证！');}else if(loot.length>=3){msg('物品格已满，请先返回卡车。');return;}else{loot.push(o.name);msg(`获得 ${o.name}，估值 $${o.value||0}。`);}o.used=true;updateHud();}
+}
+function hit(){let n=npcs.find(n=>!n.down&&Math.hypot(n.x-player.x,n.z-player.z)<2.3);if(n){n.down=180;msg('NPC被木棍击倒，约3分钟后恢复。');}else msg('附近没有NPC。');}
+function move(dt){let forward=(keys.KeyW?1:0)-(keys.KeyS?1:0)-stick.y,side=(keys.KeyD?1:0)-(keys.KeyA?1:0)+stick.x;let speed=(runHeld||keys.ShiftLeft?5.2:3.0)*dt;let dx=(Math.sin(player.yaw)*forward+Math.cos(player.yaw)*side)*speed,dz=(Math.cos(player.yaw)*forward-Math.sin(player.yaw)*side)*speed;player.x+=dx;player.z+=dz;player.x=Math.max(-27,Math.min(27,player.x));player.z=Math.max(-27,Math.min(27,player.z));}
+function animateNPC(n,dt,t){if(n.down>0){n.down-=dt;n.body.rotation.z=Math.PI/2;return;}n.body.rotation.z=0;if(n.sleep){n.body.rotation.x=.3;return;}n.phase+=dt*4;n.armL.rotation.x=Math.sin(n.phase)*.55;n.armR.rotation.x=-Math.sin(n.phase)*.55;n.legL.rotation.x=-Math.sin(n.phase)*.55;n.legR.rotation.x=Math.sin(n.phase)*.55;n.x=n.homeX+Math.sin(t*.25+n.phase)*1.2;n.z=n.homeZ+Math.cos(t*.22+n.phase)*1.1;n.g.position.set(n.x,0,n.z);n.g.rotation.y=Math.atan2(player.x-n.x,player.z-n.z);}
+let elapsed=0,last=performance.now();
+function frame(now){requestAnimationFrame(frame);let dt=Math.min(.04,(now-last)/1000);last=now;elapsed+=dt;
+ if(active){minutes+=dt*8;actionElapsed+=dt*8;if(sceneName==='town')townHours+=dt*8/60;if(actionElapsed>=720){active=false;minutes=9*60;buildScene('home');msg('早上09:00！你未及时返回，已被强制传送回家。');}if(minutes>=1440)minutes-=1440;}
+ if(active)move(dt);
+ npcs.forEach(n=>animateNPC(n,dt,elapsed));
+ camera.position.set(player.x,1.68,player.z);camera.rotation.set(player.pitch,player.yaw,0,'YXZ');viewArm.position.y=-.48+Math.sin(elapsed*2)*.008;
+ // gentle first-person hand and held tool
+ const o=nearest(),prompt=document.getElementById('prompt');prompt.style.display=o?'block':'none';if(o)prompt.textContent='互动：'+o.name;
+ if(messageTime>0){messageTime-=dt;if(messageTime<=0)document.getElementById('message').style.display='none';}
+ if(Math.floor(elapsed)%5===0)updateHud();
+ renderer.render(scene,camera);
+}
+document.getElementById('start').onclick=()=>{document.getElementById('menu').style.display='none';buildScene('home');msg('你醒来了。走到卡车旁边，按互动查看地图。');};
+document.getElementById('help').onclick=()=>document.getElementById('helptext').classList.toggle('hidden');
+document.getElementById('interact').onclick=interact;document.getElementById('hit').onclick=hit;document.getElementById('bag').onclick=()=>msg('随身物品：'+(loot.join('、')||'空')+'；卡车：'+(stash.join('、')||'空'));
+document.getElementById('run').onpointerdown=()=>runHeld=true;document.getElementById('run').onpointerup=()=>runHeld=false;document.getElementById('run').onpointercancel=()=>runHeld=false;
+window.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE')interact();if(e.code==='Space')hit();});window.addEventListener('keyup',e=>keys[e.code]=false);
+const stickEl=document.getElementById('stick'),nub=document.getElementById('nub');stickEl.onpointerdown=e=>{stickEl.setPointerCapture(e.pointerId);stickMove(e)};stickEl.onpointermove=e=>{if(e.buttons)stickMove(e)};stickEl.onpointerup=stickEl.onpointercancel=()=>{stick={x:0,y:0};nub.style.left='36px';nub.style.top='36px';};function stickMove(e){let r=stickEl.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2,d=Math.hypot(x,y),k=Math.min(1,47/(d||1));stick={x:x/47*k,y:y/47*k};nub.style.left=36+x*k+'px';nub.style.top=36+y*k+'px';}
+renderer.domElement.addEventListener('pointerdown',e=>{if(e.clientX>innerWidth*.35){lookTouch={x:e.clientX,y:e.clientY};renderer.domElement.setPointerCapture(e.pointerId);}});renderer.domElement.addEventListener('pointermove',e=>{if(lookTouch){let dx=e.clientX-lookTouch.x,dy=e.clientY-lookTouch.y;player.yaw-=dx*.004;player.pitch=Math.max(-1.1,Math.min(1.1,player.pitch-dy*.003));lookTouch={x:e.clientX,y:e.clientY};}});renderer.domElement.addEventListener('pointerup',()=>lookTouch=null);
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+buildScene('home');updateHud();requestAnimationFrame(frame);
+})();
+</script>
+</body></html>
